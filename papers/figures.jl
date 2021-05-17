@@ -1,7 +1,11 @@
 # # Introduction
 
-# The first thing we do is load the code base
+# We first load [DrWatson](https://juliadynamics.github.io/DrWatson.jl/dev/),
+# a scientific project management software that helps reproducibility.
 using DrWatson
+
+# We then activate this project, which also loads a bundle of packages
+# (most notably ClimateBase.jl), and includes all files in the `src` folder.
 @quickactivate :AlbedoProperties
 
 # We then load the style file for the figures (text size, colors, etc.)
@@ -14,13 +18,13 @@ EBAF_SFC = datadir("CERES", "EBAF_SFC.nc")
 SEAICE = datadir("CERES", "SYN1deg_AUX.nc")
 
 # And from these files load all spatiotemporal fields necessary
-R = ClimArray(EBAF_TOA, "toa_sw_all_mon")
-K = ClimArray(EBAF_TOA, "toa_sw_clr_c_mon")
-I = ClimArray(EBAF_TOA, "solar_mon")
-F = ClimArray(EBAF_TOA, "cldarea_total_daynight_mon") ./ 100
-T = ClimArray(EBAF_TOA, "cldtau_total_day_mon")
-O = ClimArray(SEAICE, "aux_ocean_mon") ./ 100
-E = ClimArray(SEAICE, "aux_snow_mon") ./ 100
+R = ncread(EBAF_TOA, "toa_sw_all_mon")
+K = ncread(EBAF_TOA, "toa_sw_clr_c_mon")
+I = ncread(EBAF_TOA, "solar_mon")
+F = ncread(EBAF_TOA, "cldarea_total_daynight_mon") ./ 100
+T = ncread(EBAF_TOA, "cldtau_total_day_mon")
+O = ncread(SEAICE, "aux_ocean_mon") ./ 100
+E = ncread(SEAICE, "aux_snow_mon") ./ 100
 L = clamp.(1 .- O .- E, 0, 1) # ice-free land
 R
 
@@ -141,13 +145,13 @@ sg = surrogenerator(x, TFTS(0.1))
 
 x = Array(Rn_res)[1:end-1]
 y = Array(Rn_res)[2:end]
-bins = std(x)/4 # bins used for MI
 function mutualinfo(x, y, ε)
     Hx = genentropy(Dataset(x), ε)
     Hy = genentropy(Dataset(y), ε)
     Hxy = genentropy(Dataset(x,y), ε)
     return Hx + Hy - Hxy
 end
+bins = std(x)/4 # bins used for MI
 mi = mutualinfo(x, y, bins)
 M = 10000;
 mis = zeros(M)
@@ -175,7 +179,7 @@ fig.subplots_adjust(wspace = 0.2, hspace = 0.3, left = 0.14, bottom = 0.2, top =
 wsave(papersdir("figures", "residuals_noise"), fig) #src
 fig
 
-# ## Proof that R difference ≡ 0
+# ## Distributions for ΔR values
 # %% #src
 using TimeseriesSurrogates, Random
 fig = figure(;figsize = (figx, 3figy/2))
@@ -214,7 +218,7 @@ ax_difpps.set_yticks([])
 ax_difpps.grid(false)
 ax_difpps.set_xticks(-0.25:0.25:0.25)
 ax_difpps.set_ylabel("pdf")
-ax_difpps.set_xlabel("avg. diff. (W m⁻²)")
+ax_difpps.set_xlabel("avg. diff. \$\\Delta R\$ (W m⁻²)")
 ax_difpps.legend(loc = "lower left")
 
 # ### Autoregressive approximation
@@ -259,7 +263,7 @@ ax_difar.legend(loc="lower left")
 ax_difar.set_yticks([])
 ax_difar.set_xticks(-0.25:0.25:0.25)
 ax_difar.grid(false)
-ax_difar.set_xlabel("avg. diff. (W m⁻²)")
+ax_difar.set_xlabel("avg. diff. \$\\Delta R\$ (W m⁻²)")
 
 fig.tight_layout()
 fig.subplots_adjust(wspace = 0.1, hspace = 0.3, left = 0.12, bottom = 0.1, top =0.95)
@@ -322,7 +326,7 @@ for (j, r) in enumerate((internaln[1:mys], internals[1:mys]))
     ℓ, k = findnearest.((2, maxmonth), Ref(ps))
     ps = ps[ℓ:k]
     P = P[ℓ:k]
-    P = abs.(P) ./ maximum(abs.(P))
+    P = abs.(P)
     axs[2].plot(ps, log10.(P),
     color = "C$(j-1)", ls = j == 1 ? "-" : "--")
 end
@@ -385,10 +389,10 @@ C1 = cloud_effective_albedo(F, Tcorrected, 0.9)
 C1_timeavg = timemean(C1)
 
 # use `\:arrow_down:` and tab for arrows
-F_s_⬆ = ClimArray(EBAF_SFC, "sfc_sw_up_all_mon")
-F_s_⬇ = ClimArray(EBAF_SFC, "sfc_sw_down_all_mon")
-F_s_⬆_K = ClimArray(EBAF_SFC, "sfc_sw_up_clr_c_mon")
-F_s_⬇_K = ClimArray(EBAF_SFC, "sfc_sw_down_clr_c_mon");
+F_s_⬆ = ncread(EBAF_SFC, "sfc_sw_up_all_mon")
+F_s_⬇ = ncread(EBAF_SFC, "sfc_sw_down_all_mon")
+F_s_⬆_K = ncread(EBAF_SFC, "sfc_sw_up_clr_c_mon")
+F_s_⬇_K = ncread(EBAF_SFC, "sfc_sw_down_clr_c_mon");
 
 # Because surface data do not have the same amount of points, we are forced to use a
 # smaller time span. (even if we time-average fields, this is still the accurate thing to do)
@@ -408,9 +412,9 @@ if false # plot spatial fields
     for (a, name) in zip(as, nmes)
         @show name, extrema(a)
         if name != "C₁ - C₂"
-            fig, ax, = over_earth_plot(a; cmap = cmap, vmin = 0, vmax = 0.7)
+            fig, ax, = earthsurface(a; cmap = cmap, vmin = 0, vmax = 0.7)
         else
-            fig, ax, = over_earth_plot(a; cmap = cmap, vmin = -0.2, vmax = 0.2)
+            fig, ax, = earthsurface(a; cmap = cmap, vmin = -0.2, vmax = 0.2)
         end
         ax.set_title(name)
     end
@@ -427,13 +431,12 @@ C = cloud_effective_albedo(F, Tcorrected, g)
 # Let's produce maps of f, τ, g, C (for appendix)
 for (label, X) in zip(("f", "\\tau", "g", "C"), (f, τ, g, timemean(C)))
     m = spacemean(X)
-    fig, ax, = over_earth_plot(X; cmap = "gist_earth")
+    fig, ax, = earthsurface(X; cmap = "gist_earth")
     ax.set_title("\$$(label)\$, mean = $(rdspl(m))")
-    fig.subplots_adjust(left = 0.01, right = 0.85, bottom = 0.01, top = 0.99)
     wsave(papersdir("figures", "map_$label"), fig) #src
 end
 
-# Average cloudines per hemisphere:
+# Average cloud albedo per hemisphere:
 Cn, Cs = hemispheric_means(C)
 timemean.((Cn, Cs))
 

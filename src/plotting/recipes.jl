@@ -1,27 +1,43 @@
 include("style.jl")
-using PyCall, PyPlot
+
+# Uncomment the following to install the necessary packages for plotting.
+# Pkg.add(["Conda", "PyCall"])
+# using Conda
+# Conda.add("cartopy")
+
+using PyCall, PyPlot, ClimateBase
 ccrs = pyimport("cartopy.crs")
 LONLAT = ccrs.PlateCarree()
 DEFPROJ = ccrs.Mollweide()
+Time = ClimateBase.Ti
 
-function earthscatter(A::AbDimArray, projection = DEFPROJ; kwargs...)
+"""
+    earthscatter(A::ClimArray, projection = ccrs.Mollweide(); kwargs...) → fig, ax, cb
+Plot a `ClimArray` with space type `GaussianEqualArea` as a scatter plot with the color
+of the points being the value of `A` at these points. This requires that `A` has only
+one dimension, the coordinates.
+
+Keyword values are propagated to `scatter` and keys of interest are `cmap, vmin, vmax`.
+"""
+function earthscatter(A::ClimArray, projection = DEFPROJ; kwargs...)
     coords = dims(A, Coord)
+    @assert length(dims(A)) == 1 "Input ClimArray must only have one `Coord` dimension."
     eqlon = [l[1] for l in coords]
     eqlat = [l[2] for l in coords]
-    earthscatter(eqlon, eqlat, A.data, projection; kwargs...)
-end
-
-function earthscatter(lon, lat, A, projection = DEFPROJ; kwargs...)
     fig = figure()
     fig.tight_layout()
     ax = subplot(111, projection=projection)
-    earthscatter!(ax, lon, lat, A, projection; kwargs...)
+    ax, cb = earthscatter!(ax, eqlon, eqlat, A.data, projection; kwargs...)
+    if A.name ≠ Symbol("")
+        ax.set_title(string(A.name))
+    end
+    return fig, ax, cb
 end
 
 function earthscatter!(ax, A, projection = DEFPROJ; kwargs...)
-    coords = dims(Aeq, Coord)
-    eqlon = [l[1] for l in coords]
-    eqlat = [l[2] for l in coords]
+    coords = dims(A, Coord)
+    lon = [l[1] for l in coords]
+    lat = [l[2] for l in coords]
     earthscatter!(ax, lon, lat, A, projection; kwargs...)
 end
 
@@ -47,27 +63,37 @@ function earthscatter!(ax, lon, lat, A, projection = DEFPROJ;
     return ax, cb
 end
 
-function over_earth_plot(A, projection = DEFPROJ;
-    coast = true, name = "", kwargs...)
+"""
+    earthsurface(A::ClimArray, projection = ccrs.Mollweide(); kwargs...) → fig, ax, cb
+Plot a `ClimArray` with space type `LonLatGrid` as a surface plot with the color
+of the surface being the value of `A`. This requires that `A` has exactly two dimensions,
+`Lon, Lat`.
+
+Keyword values are `coast=true` to enable coastlines and also `cmap, vmin, vmax, levels`.
+"""
+function earthsurface(A, projection = DEFPROJ;
+    coast = true, kwargs...)
     fig = figure()
     fig.tight_layout()
     ax = subplot(111, projection=projection)
-    ax, cb = over_earth_plot!(ax, A; kwargs...)
+    ax, cb = earthsurface!(ax, A; kwargs...)
     if projection == LONLAT
         ax.set_xticks(-180:60:180, crs=LONLAT)
         ax.set_yticks(-90:30:90, crs=LONLAT)
     end
-    ax.set_title(name)
+    if A.name ≠ Symbol("")
+        ax.set_title(string(A.name))
+    end
     return fig, ax, cb
 end
 
-function over_earth_plot!(ax, A::AbDimArray; kwargs...)
+function earthsurface!(ax, A::ClimArray; kwargs...)
     ax.gridlines(alpha = 0.25)
     lon, lat, s = _getwrappeddata(A)
-    over_earth_plot!(ax, lon, lat, s; kwargs...)
+    earthsurface!(ax, lon, lat, s; kwargs...)
 end
 
-function over_earth_plot!(ax, lon, lat, A;
+function earthsurface!(ax, lon, lat, A;
     vmin = minimum(A), vmax = maximum(A), levels = 11,
     coast = true, specific_contour = nothing, kwargs...)
 
@@ -79,7 +105,7 @@ function over_earth_plot!(ax, lon, lat, A;
     cmap = matplotlib.cm.get_cmap(get(kwargs, :cmap, :viridis), length(lvls)-1)
     # cmap.set_under("k")
     norm = matplotlib.colors.Normalize(vmin=lvls[1], vmax=lvls[end])
-    cax, kw = matplotlib.colorbar.make_axes(ax,location="right",pad=0.02,shrink=0.8,anchor = (0.85, 0.5))
+    cax, kw = matplotlib.colorbar.make_axes(ax,location="right",pad=0.02,shrink=0.8)
     cb = matplotlib.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm)
     coast && ax.coastlines(; color = "gray")
 
@@ -93,7 +119,7 @@ function over_earth_plot!(ax, lon, lat, A;
     return ax, cb
 end
 
-function _getwrappeddata(A::AbDimArray)
+function _getwrappeddata(A::ClimArray)
     lon = copy(Array(dims(A, Lon).val))
     lat = copy(Array(dims(A, Lat).val))
     s = copy(Array(A.data)) # assumes data have Lon x Lat dimensions
@@ -117,13 +143,13 @@ dateformater = matplotlib.dates.ConciseDateFormatter(
     matplotlib.dates.AutoDateLocator(interval_multiples=true)
 )
 
-PyPlot.plot(A::AbDimArray{T, 1}; kwargs...) where {T} = plot!(gca(), A; kwargs...)
-function plot!(ax, A::AbDimArray{T, 1}; kwargs...) where {T}
+PyPlot.plot(A::ClimArray{T, 1}; kwargs...) where {T} = plot!(gca(), A; kwargs...)
+function plot!(ax, A::ClimArray{T, 1}; kwargs...) where {T}
     r = ax.plot(dims(A, 1).val, A.data; kwargs...)
     ax.set_xlabel(_xlabel(A))
     return r
 end
-function plot!(ax, A::AbDimArray{T, 1, <: Tuple{<:Time}}; addlabels = true, kwargs...) where {T}
+function plot!(ax, A::ClimArray{T, 1, <: Tuple{<:Time}}; addlabels = true, kwargs...) where {T}
     t = dims(A, 1)
     x = 1:length(t.val)
     la = ["$(month(a))/$(year(a))" for a in t]
@@ -132,7 +158,6 @@ function plot!(ax, A::AbDimArray{T, 1, <: Tuple{<:Time}}; addlabels = true, kwar
     i = [1, length(la)÷3, 2length(la)÷3, length(la)]
     ax.set_xticks(x[i])
     ax.set_xticklabels(la[i])
-    # A.name != "" && ax.set_title(A.name)
     return r
 end
 
@@ -141,7 +166,7 @@ function plot!(ax, x, y; kwargs...) where {T}
     ax.set_xlabel(_xlabel(x))
 end
 
-function heatmap!(ax, A::AbDimArray{T, 2}; kwargs...) where {T}
+function heatmap!(ax, A::ClimArray{T, 2}; kwargs...) where {T}
     x = dims(A, 2).val
     y = dims(A, 1).val
     a = A.data#[1:end-1, 1:end-1]
@@ -152,7 +177,7 @@ function heatmap!(ax, A::AbDimArray{T, 2}; kwargs...) where {T}
 end
 
 _xlabel(x) = ""
-_xlabel(x::AbDimArray) = _xlabel(dims(x)[1])
+_xlabel(x::ClimArray) = _xlabel(dims(x)[1])
 _xlabel(::Lon) = "longitude λ [ᵒ]"
 _xlabel(::Lat) = "latitude φ [ᵒ]"
 _xlabel(::Time) = "time [months]"
@@ -227,6 +252,12 @@ function plottrend!(ax, x, y; label="s", addlabel=true, kwargs...)
         ax.plot(x, f; kwargs...)
     end
     return s, o, f
+end
+
+function latitudinal_axis!(ax, llats = -70:20:70)
+    ax.set_xticks(sind.(llats))
+    ax.set_xticklabels(llats)
+    ax.set_xlim(-1,1)
 end
 
 #########################################################################

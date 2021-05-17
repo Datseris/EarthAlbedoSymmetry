@@ -38,7 +38,7 @@ SignalDecomposition.decompose(s::AbDimArray, m::Sinusoidal) =
 decompose(dims(s, Time).val, Array(s), m)
 
 function SignalDecomposition.decompose(t::AbstractVector{<:TimeType}, s, m::Sinusoidal)
-    truetime = time_in_days(t)
+    truetime = realtime_days(t)
     decompose(truetime, s, m)
 end
 
