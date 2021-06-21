@@ -8,7 +8,7 @@ To locally reproduce this project, do the following:
 0. Download this code base as is.
 1. Open a Julia console and do:
    ```
-   julia> using Pkg
+   julia> using Pkg; Pkg.add("DrWatson")
    julia> Pkg.activate("path/to/this/project")
    julia> Pkg.instantiate()
    ```
